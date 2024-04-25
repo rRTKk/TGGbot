@@ -1,19 +1,27 @@
 import requests
 import config
+from asyncio import Lock
 from random import randint
 from telebot import types
+from aiogram.dispatcher.storage import FSMContext
+from yandexgptlite import YandexGPTLite
+from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram import Bot, Dispatcher, executor, types
 from bs4 import BeautifulSoup as b
 from aiogram.types.message import ContentType
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
 import aiogram.utils.markdown as fmt
 import aiogram
 from aiogram.types import ReplyKeyboardRemove, \
     ReplyKeyboardMarkup, KeyboardButton, \
     InlineKeyboardMarkup, InlineKeyboardButton
 
+
 URL = 'https://www.ixbt.com/news/'
-bot = Bot(token="5701152954:AAFlBLwPa0BYw5m9zHwEQetmmZAoCyvd8B0")
-dp = Dispatcher(bot)
+bot = Bot(token="5701152954:AAFlBLwPa0BYw5m9zHwEQetmmZAoCyvd8B0", parse_mode='HTML')
+account = YandexGPTLite('b1g7anst1rljuuojh34n', 'y0_AgAAAAAw_WLIAATuwQAAAAEDFR4xAABlYsGIquVPL4rSURTDk7KbdKFFQw')
+dp = Dispatcher(bot, storage=MemoryStorage())
+lock = Lock()
 
 
 def parser(url):
@@ -42,31 +50,13 @@ def parser4(url):
     readytosend = []
     r = requests.get(URL)
     soup = b(r.text, 'html.parser')
-    print(soup)
     data = soup.find_all('a', class_='comments_link')
-
     data = str(data).split('href="')
     for i in range(len(data)):
-        if i % 2 == 1:
-            prepare.append(data[i])
-    for i in range(len(prepare)):
+        prepare.append(data[i])
+    for i in range(1, len(prepare)):
         ready = prepare[i].split('#')
-        readytosend.append(str(ready[0]))
-    return [c for c in readytosend]
-
-
-def parser5(url):
-    prepare = []
-    readytosend = []
-    r = requests.get(URL)
-    soup = b(r.text, 'html.parser')
-    data = soup.find_all('a', class_='time_iteration_icon_light')
-    data = str(data).split('href="')
-    for i in range(len(data)):
-        if i % 2 == 1:
-            prepare.append(data[i])
-    for i in range(len(prepare)):
-        ready = prepare[i].split('#')
+        print(ready)
         readytosend.append(str(ready[0]))
     return [c for c in readytosend]
 
@@ -77,11 +67,18 @@ NewsD = News[3:]
 Dskr = parser2(URL)
 Time = parser3(URL)
 Source = parser4(URL)
-SourceMain = parser5(URL)
-print(SourceMain)
 print(Source[0])
 TimeD = Time[3:]
 TimeM = Time[:3]
+
+
+class RegisterMessages(StatesGroup):
+    step1 = State()
+    step2 = State()
+
+
+class DB:
+    answer_data = {}
 
 
 @dp.message_handler(commands="start")
@@ -102,11 +99,29 @@ async def start(message: types.Message):
 
 @dp.message_handler(lambda message: message.text == "GPT")
 async def without_puree(message: types.Message):
-    await message.reply("В разработке!")
+    animation = types.InputFile('grandma.gif')
+    await bot.send_animation(message.chat.id, animation=animation,
+                             caption=f'Представьте Telegram-бота, который понимает вас с полуслова, ведет увлекательные'
+                                     f' беседы и выполняет любые задачи. С GPT это реальность! \nGPT-боты общаются на естественном языке,'
+                                     f' создают уникальный контент, переводят тексты, анализируют информацию и многое другое.'
+                                     f' \nПовысьте эффективность бизнеса и удивите клиентов умным ботом с искусственным интеллектом GPT.')
+    await RegisterMessages.step1.set()
+    await bot.send_message(message.from_user.id, text='Введите запрос для GPT')
+
+
+@dp.message_handler(content_types='text', state=RegisterMessages.step1)
+async def reg_step1(message: types.Message, state: FSMContext):
+    async with lock:
+        DB.answer_data['name'] = message.text
+    text = account.create_completion(DB.answer_data["name"], '0.6',
+                                     system_prompt='Отвечай на русском')
+    await bot.send_message(message.from_user.id, text=f'{text}\n\nЧтобы сделать еще один запрос нажмите на кнопку GPT')
+    await state.finish()
 
 
 @dp.message_handler(lambda message: message.text == "Заметки")
 async def without_puree(message: types.Message):
+    print(message)
     await message.reply("В разработке!")
 
 
@@ -118,17 +133,38 @@ async def without_puree(message: types.Message):
                                      f'Мы поможем!\n\nПредлагаем вам учебные материалы от лучших специалистов, интерактивные задания,'
                                      f' практические проекты и поддержку на каждом этапе обучения.\n\nНаши программы помогут '
                                      f'вам не только освоить новые знания, но и применить их на практике, чтобы стать экспертом в своей области.')
-    keyboard = types.InlineKeyboardMarkup()
-    keyboard.add(types.InlineKeyboardButton(text="Курс Яндекс лицей Unity", callback_data="random_value"))
-    await message.answer("Каталог курсов", reply_markup=keyboard)
 
-@dp.callback_query_handler(text="random_value")
+    keyboard = types.InlineKeyboardMarkup()
+    keyboard.add(types.InlineKeyboardButton(text="Курс Яндекс лицей Unity", callback_data='unity'))
+    keyboard.add(types.InlineKeyboardButton(text="Курс REST-api", callback_data='restapi'))
+    keyboard.add(types.InlineKeyboardButton(text="Курс Python", callback_data='python'))
+    await message.answer("Каталог курсов:", reply_markup=keyboard)
+
+
+@dp.callback_query_handler(text="unity")
 async def send_random_value(call: types.CallbackQuery):
-    await call.answer(text="Ой-ой! Кажется тут нарушаются авторские права, сделайте вид как будто вы этого не знаете.", show_alert=True)
+    await call.answer(text="Ой-ой! Кажется тут нарушаются авторские права, сделайте вид как будто вы этого не знаете.",
+                      show_alert=True)
+    await call.message.answer("Я понимаю, что пиратсво это плохо\nПерейти к курсу /UnityBuy")
+
+
+@dp.callback_query_handler(text="restapi")
+async def send_random_value(call: types.CallbackQuery):
+    await call.answer(text="Ой-ой! Кажется тут нарушаются авторские права, сделайте вид как будто вы этого не знаете.",
+                      show_alert=True)
+    await call.message.answer("Я понимаю, что пиратсво это плохо\nПерейти к курсу /RestBuy")
+
+
+@dp.callback_query_handler(text="python")
+async def send_random_value(call: types.CallbackQuery):
+    await call.answer(text="Ой-ой! Кажется тут нарушаются авторские права, сделайте вид как будто вы этого не знаете.",
+                      show_alert=True)
+    await call.message.answer("Я понимаю, что пиратсво это плохо\nПерейти к курсу /PythonBuy")
+
 
 @dp.message_handler(commands=['UnityBuy'])
 async def UnityBuy(message: types.Message):
-    PRICE = types.LabeledPrice(label="Курс Яндекс лицей Unity", amount=500 * 100)
+    PRICE = types.LabeledPrice(label="Курс Яндекс лицей Unity", amount=1000 * 100)  # в копейках (руб)
     if config.PAYTOKEN.split(':')[1] == 'TEST':
         await bot.send_message(message.chat.id, "Курс Яндекс лицей Unity")
     await bot.send_invoice(message.chat.id,
@@ -146,6 +182,46 @@ async def UnityBuy(message: types.Message):
                            payload="Yandex_Unity")
 
 
+@dp.message_handler(commands=['RestBuy'])
+async def UnityBuy(message: types.Message):
+    PRICE = types.LabeledPrice(label="Курс Resp Api", amount=600 * 100)  # в копейках (руб)
+    if config.PAYTOKEN.split(':')[1] == 'TEST':
+        await bot.send_message(message.chat.id, "Курс Resp Api")
+    await bot.send_invoice(message.chat.id,
+                           title="Курс Resp Api",
+                           description="Ссылки на материал + видео-учебник",
+                           provider_token=config.PAYTOKEN,
+                           currency="rub",
+                           photo_url="https://www.astera.com/wp-content/uploads/2020/01/rest.png",
+                           photo_width=936,
+                           photo_height=708,
+                           photo_size=936,
+                           is_flexible=False,
+                           prices=[PRICE],
+                           start_parameter="RestApiStep",
+                           payload="RestApiStepBuy")
+
+
+@dp.message_handler(commands=['PythonBuy'])
+async def UnityBuy(message: types.Message):
+    PRICE = types.LabeledPrice(label="Курс Python основы", amount=400 * 100)  # в копейках (руб)
+    if config.PAYTOKEN.split(':')[1] == 'TEST':
+        await bot.send_message(message.chat.id, "Курс Python основы")
+    await bot.send_invoice(message.chat.id,
+                           title="Курс Python основы",
+                           description="Ссылки на материал + видео-учебник",
+                           provider_token=config.PAYTOKEN,
+                           currency="rub",
+                           photo_url="https://www.hse.ru/data/2019/09/12/1537849837/3%D0%BF%D0%B8%D1%82%D0%BE%D0%BD%20%D0%BB%D0%BE%D0%B3%D0%BE%D1%82%D0%B8%D0%BF.png",
+                           photo_width=1083,
+                           photo_height=722,
+                           photo_size=1083,
+                           is_flexible=False,
+                           prices=[PRICE],
+                           start_parameter="pythonbuy",
+                           payload="PythonStepBuy")
+
+
 @dp.pre_checkout_query_handler(lambda query: True)
 async def pre_checkout_query(pre_checkout_q: types.PreCheckoutQuery):
     await bot.answer_pre_checkout_query(pre_checkout_q.id, ok=True)
@@ -159,11 +235,18 @@ async def successful_payment(message: types.Message):
     payment_info = message.successful_payment.to_python()
     for k, v in payment_info.items():
         print(f"{k} = {v}")
-
-    await bot.send_message(message.chat.id,
-                           f"Платеж на сумму {message.successful_payment.total_amount // 100} {message.successful_payment.currency} прошел успешно! "
-                           f"Ссылка: https://disk.yandex.ru/d/g721TvTNaXivig \n Не забудьте сохранить ссылку! \n"
-                           f"Вернуться на главный экран \start")
+    if message.successful_payment.total_amount // 100 == 1000:
+        await bot.send_message(message.chat.id,
+                               f"Платеж на сумму {message.successful_payment.total_amount // 100} {message.successful_payment.currency} прошел успешно! "
+                               f"Ссылка: https://disk.yandex.ru/d/g721TvTNaXivig \n Не забудьте сохранить ссылку!")
+    elif message.successful_payment.total_amount // 100 == 600:
+        await bot.send_message(message.chat.id,
+                               f"Платеж на сумму {message.successful_payment.total_amount // 100} {message.successful_payment.currency} прошел успешно! "
+                               f"Ссылка: https://disk.yandex.ru/d/0KgkiFJVHW0Lrw\n\nНе забудьте сохранить ссылку!")
+    elif message.successful_payment.total_amount // 100 == 400:
+        await bot.send_message(message.chat.id,
+                               f"Платеж на сумму {message.successful_payment.total_amount // 100} {message.successful_payment.currency} прошел успешно! "
+                               f"Ссылка: https://disk.yandex.ru/d/7DjT3k8aI6H7Mg\n\nНе забудьте сохранить ссылку!")
 
 
 @dp.message_handler(lambda message: message.text == "Новости")
