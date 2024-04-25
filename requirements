@@ -1,0 +1,2 @@
+хз введи это в терминал
+pip install python-telegram-bot[ext] --upgrade
