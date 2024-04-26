@@ -16,7 +16,6 @@ from aiogram.types import ReplyKeyboardRemove, \
     ReplyKeyboardMarkup, KeyboardButton, \
     InlineKeyboardMarkup, InlineKeyboardButton
 
-
 URL = 'https://www.ixbt.com/news/'
 bot = Bot(token="5701152954:AAFlBLwPa0BYw5m9zHwEQetmmZAoCyvd8B0", parse_mode='HTML')
 account = YandexGPTLite('b1g7anst1rljuuojh34n', 'y0_AgAAAAAw_WLIAATuwQAAAAEDFR4xAABlYsGIquVPL4rSURTDk7KbdKFFQw')
@@ -75,10 +74,19 @@ TimeM = Time[:3]
 class RegisterMessages(StatesGroup):
     step1 = State()
     step2 = State()
+    name = State()
+    desc = State()
+    dates = State()
+    priority = State()
 
 
 class DB:
     answer_data = {}
+    all_notes = []
+    name = ''
+    descript = ''
+    dates = ''
+    priority = ''
 
 
 @dp.message_handler(commands="start")
@@ -123,6 +131,79 @@ async def reg_step1(message: types.Message, state: FSMContext):
 async def without_puree(message: types.Message):
     print(message)
     await message.reply("В разработке!")
+
+
+@dp.message_handler(lambda message: message.text == "Новая заметка")
+async def new_note(message: types.Message):
+    print(DB.all_notes)
+    sp = DB.all_notes
+
+    await RegisterMessages.name.set()
+    name = DB.name
+
+    await RegisterMessages.desc.set()
+    descr = DB.descript
+
+    await RegisterMessages.dates.set()
+    dates = DB.dates
+
+    await RegisterMessages.priority.set()
+    priority = DB.priority
+
+    names = []
+    if sp:
+        ...
+    else:
+        for i in sp:
+            names.append(i['names'])
+    while name in names:
+        await bot.send_message(message.from_user.id, text='такое название уже существует')
+        await RegisterMessages.name.set()
+        name = DB.name
+
+    D = {'name': name,
+         'description': descr,
+         'priority': priority,
+         'dates': dates}
+
+    sp.append(D)
+    DB.all_notes = sp
+    DB.name = ''
+    DB.dates = ''
+    DB.priority = ''
+    DB.descript = ''
+
+
+@dp.message_handler(content_types='text', state=RegisterMessages.name)
+async def get_name(message: types.Message, state: FSMContext):
+    async with lock:
+        DB.name = message.text
+        await bot.send_message(message.from_user.id, text='Введите название')
+        await state.finish()
+
+
+@dp.message_handler(content_types='text', state=RegisterMessages.desc)
+async def get_desc(message: types.Message, state: FSMContext):
+    async with lock:
+        DB.descript = message.text
+        await bot.send_message(message.from_user.id, text='Введите описание')
+        await state.finish()
+
+
+@dp.message_handler(content_types='text', state=RegisterMessages.dates)
+async def get_date(message: types.Message, state: FSMContext):
+    async with lock:
+        DB.dates = message.text
+        await bot.send_message(message.from_user.id, text='Введите дедлайн')
+        await state.finish()
+
+
+@dp.message_handler(content_types='text', state=RegisterMessages.priority)
+async def get_priority(message: types.Message, state: FSMContext):
+    async with lock:
+        DB.priority = message.text
+        await bot.send_message(message.from_user.id, text='Введите приоритет')
+        await state.finish()
 
 
 @dp.message_handler(lambda message: message.text == "Купить курсы")
